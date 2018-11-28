@@ -112,9 +112,9 @@ public class jcloudTest {
 
     public static void main(String[] args) throws IOException {
 
-        //String bucketName="malijose-jcloud-test2";
-        String bucketName="maliha-bucket";
-        String blobName="print.pdf";
+        //String bucketName="";
+        String bucketName="";
+        String blobName="";
 
         //get a amazon context
         BlobStoreContext context = ContextBuilder.newBuilder("aws-s3")
@@ -122,7 +122,7 @@ public class jcloudTest {
                 .buildView(BlobStoreContext.class);
 
         BlobStore blobStore = context.getBlobStore();
-        Blob downloadBlob = blobStore.getBlob(bucketName,"maliha.pdf");
+        Blob downloadBlob = blobStore.getBlob(bucketName,"");
 
         downloadBlob(downloadBlob);
         //deleteBlob(blobStore, bucketName, blobName);
