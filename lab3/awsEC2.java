@@ -26,6 +26,7 @@ import org.jclouds.packet.domain.IpAddress;
 import com.amazonaws.services.ec2.model.RunInstancesResult;
 import com.amazonaws.services.ec2.model.StartInstancesRequest;
 
+import software.amazon.awssdk.regions.internal.util.EC2MetadataUtils;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.Ec2Exception;
 import software.amazon.awssdk.services.ec2.model.RunInstancesResponse;
@@ -155,6 +156,7 @@ public class awsEC2 {
 
     public static void createInstance(String amiID, String keyName, String groupName, String region, Ec2Client ec3)
     {
+        //create instance using AmazonEC2 method
         /*
         AmazonEC2 ec2Client = AmazonEC2ClientBuilder
                 .standard()
@@ -181,6 +183,7 @@ public class awsEC2 {
         CreateTagsRequest tagReq= CreateTagsRequest.builder().tags(tag).build();*/
 
 
+        //create instance using EC2client method
         software.amazon.awssdk.services.ec2.model.RunInstancesRequest run_request =
                 software.amazon.awssdk.services.ec2.model.RunInstancesRequest.builder()
                         .securityGroups(groupName)
@@ -218,6 +221,43 @@ public class awsEC2 {
     }
 
 
+    public static void stopInstance(String instanceID)
+    {
+        Ec2Client ec2 = Ec2Client.create();
+        StopInstancesRequest request = StopInstancesRequest.builder()
+                .instanceIds(instanceID).build();
+        ec2.stopInstances(request);
+    }
+
+
+    //describe attributes of an instance
+    public static void describeInstance(AmazonEC2 ec2)
+    {
+        boolean done = false;
+
+        DescribeInstancesRequest request = new DescribeInstancesRequest();
+        while(!done) {
+            DescribeInstancesResult response = ec2.describeInstances(request);
+
+            for(Reservation reservation : response.getReservations()) {
+                for(Instance instance : reservation.getInstances()) {
+                    System.out.println("Instance with id " +  instance.getInstanceId()
+                                    + " AMI " + instance.getKeyName()
+                                    + " type " + instance.getInstanceType()
+                                    + " state " +   instance.getState().getName()
+                                    + " and monitoring state" + instance.getMonitoring().getState() + "\n");
+                }
+            }
+
+            request.setNextToken(response.getNextToken());
+
+            if(response.getNextToken() == null) {
+                done = true;
+            }
+        }
+    }
+
+
     public static void createKeyPair(String keyName,AmazonEC2 ec2)
     {
         CreateKeyPairRequest createKeyPairRequest = new CreateKeyPairRequest();
@@ -242,12 +282,6 @@ public class awsEC2 {
     }
 
 
-    public static void stopInstance()
-    {
-        
-    }
-
-
     public static void main(String[] args)
     {
         String groupName="";
@@ -256,12 +290,14 @@ public class awsEC2 {
         String region="eu-west-1"; //ireland
         String keyName="";
         String amiID = "";
+        String instanceID="";
 
 
         final AmazonEC2 ec2=AmazonEC2ClientBuilder.standard().withRegion(region).build();
         Ec2Client ec3 = software.amazon.awssdk.services.ec2.Ec2Client.builder().region(software.amazon.awssdk.regions.Region.of(region)).build();
 
-        test(amiID,groupName, region);
+        describeInstance(ec2);
+        //stopInstance(instanceID);
         //listKeyPair(ec2);
         //createKeyPair(keyName,ec2);
         //createInstance(ami_id, keyName, groupName, region,ec3);
