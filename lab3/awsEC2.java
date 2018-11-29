@@ -1,5 +1,10 @@
 package lab3;
 
+import com.amazonaws.metrics.MetricCollector;
+import com.amazonaws.metrics.internal.cloudwatch.spi.MetricData;
+import com.amazonaws.regions.Regions;
+import com.amazonaws.services.cloudwatch.AmazonCloudWatchClient;
+import com.amazonaws.services.cloudwatch.model.*;
 import com.amazonaws.services.ec2.model.*;
 import com.amazonaws.services.elasticache.model.CreateCacheSecurityGroupRequest;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -9,18 +14,20 @@ import com.amazonaws.services.ec2.model.CreateSecurityGroupResult;
 import com.amazonaws.services.ec2.model.DescribeKeyPairsResult;
 import com.amazonaws.services.ec2.model.KeyPairInfo;
 
-import com.amazonaws.services.ec2.model.DescribeRegionsResult;
-import com.amazonaws.services.s3.model.Bucket;
+import com.amazonaws.services.lightsail.model.GetInstanceAccessDetailsRequest;
+import com.amazonaws.services.lightsail.model.GetInstanceAccessDetailsResult;
+import com.amazonaws.services.lightsail.model.InstanceAccessDetails;
+import software.amazon.awssdk.services.cloudwatch.CloudWatchClient;
+import software.amazon.awssdk.services.cloudwatch.model.GetMetricStatisticsResponse;
+import software.amazon.awssdk.services.cloudwatch.model.ListMetricsRequest;
+import software.amazon.awssdk.services.cloudwatch.model.ListMetricsResponse;
+import software.amazon.awssdk.services.cloudwatch.model.Metric;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import com.amazonaws.services.ec2.model.DescribeRegionsResult;
 
 import com.amazonaws.services.cloudwatch.AmazonCloudWatch;
 import com.amazonaws.services.cloudwatch.AmazonCloudWatchClientBuilder;
-import com.amazonaws.services.cloudwatch.model.ListMetricsRequest;
-import com.amazonaws.services.cloudwatch.model.ListMetricsResult;
-import com.amazonaws.services.cloudwatch.model.Metric;
+//import org.jclouds.cloudwatch.domain.ListMetricsResponse;
 import org.jclouds.packet.domain.IpAddress;
 
 import com.amazonaws.services.ec2.model.RunInstancesResult;
@@ -39,6 +46,10 @@ import software.amazon.awssdk.services.ec2.model.RunInstancesResponse;
 import software.amazon.awssdk.services.ec2.model.Tag;
 import software.amazon.awssdk.services.ec2.model.CreateTagsRequest;
 import software.amazon.awssdk.services.ec2.model.StopInstancesRequest;
+
+import java.util.Date;
+import java.util.List;
+import java.util.function.Consumer;
 
 
 public class awsEC2 {
@@ -258,6 +269,37 @@ public class awsEC2 {
     }
 
 
+    public static void describeInstanceWithID(String instanceID, String region)
+    {
+        System.out.println("\nCloudwatch is monitoring the Instance: ");
+        final AmazonEC2 ec2=AmazonEC2ClientBuilder.standard().withRegion(region).build();
+        boolean done = false;
+        DescribeInstancesRequest request = new DescribeInstancesRequest();
+        while(!done) {
+            DescribeInstancesResult response = ec2.describeInstances(request);
+
+            for(Reservation reservation : response.getReservations()) {
+                for(Instance instance : reservation.getInstances()) {
+                    if(instance.getInstanceId().equals(instanceID)) {
+                        System.out.println(instance.getInstanceId()
+                                + " AMI " + instance.getKeyName()
+                                + " type " + instance.getInstanceType()
+                                + " state " + instance.getState().getName()
+                                + " and monitoring state" + instance.getMonitoring().getState());
+                        break;
+                    }
+                }
+            }
+
+            request.setNextToken(response.getNextToken());
+
+            if(response.getNextToken() == null) {
+                done = true;
+            }
+        }
+    }
+
+
     public static void createKeyPair(String keyName,AmazonEC2 ec2)
     {
         CreateKeyPairRequest createKeyPairRequest = new CreateKeyPairRequest();
@@ -265,9 +307,7 @@ public class awsEC2 {
         CreateKeyPairResult createKeyPairResult =
                 ec2.createKeyPair(createKeyPairRequest);
         KeyPair keyPair = new KeyPair();
-
         keyPair = createKeyPairResult.getKeyPair();
-
     }
 
 
@@ -282,12 +322,190 @@ public class awsEC2 {
     }
 
 
+    public static void cloudwatchDescribeAlarm()
+    {
+        final AmazonCloudWatch cw = AmazonCloudWatchClientBuilder.standard().withRegion("us-west-2").build();
+
+        boolean done = false;
+        DescribeAlarmsRequest request = new DescribeAlarmsRequest();
+        while(!done) {
+
+            DescribeAlarmsResult response = cw.describeAlarms(request);
+
+            for(MetricAlarm alarm : response.getMetricAlarms()) {
+                System.out.println("Retrieved alarm " + alarm.getAlarmName()
+                        + " Metric name: " + alarm.getMetricName()
+                        + " Statistic: " + alarm.getStatistic());
+            }
+
+            request.setNextToken(response.getNextToken());
+
+            if(response.getNextToken() == null) {
+                done = true;
+            }
+        }
+    }
+
+    
+    public static void getCloudwatchMetricData(String instanceID, String region)
+    {
+        describeInstanceWithID(instanceID, region);
+
+        double networkbytesin=0;
+        Date timeStamp=null;
+        String unit=null;
+        String nameSpace="AWS/EC2";
+        String statistic="Average";
+        long offsetInMilliseconds = 1000 * 60 * 60;
+
+        final AmazonCloudWatch cw = AmazonCloudWatchClientBuilder.standard().withRegion(region).build();
+
+        GetMetricStatisticsRequest request1 = new GetMetricStatisticsRequest()
+                .withStartTime(new Date(new Date().getTime() - offsetInMilliseconds))
+                .withNamespace(nameSpace)
+                .withPeriod(60 * 60)
+                .withDimensions(new Dimension().withName("InstanceId").withValue(instanceID))
+                .withMetricName("CPUUtilization")
+                .withStatistics(statistic)
+                .withEndTime(new Date());
+
+        GetMetricStatisticsResult getMetricStatisticsResult = cw.getMetricStatistics(request1);
+
+        List dataPoint = getMetricStatisticsResult.getDatapoints();
+        for(Object aDataPoint : dataPoint)
+        {
+            Datapoint dp = (Datapoint) aDataPoint;
+            timeStamp=dp.getTimestamp();
+            networkbytesin=dp.getAverage();
+            unit=dp.getUnit();
+
+            System.out.println("\n" + "Metric Name: " + request1.getMetricName());
+            System.out.println(timeStamp + "\t" + networkbytesin + "\t" + unit);
+        }
+
+
+         request1 = new GetMetricStatisticsRequest()
+                .withStartTime(new Date(new Date().getTime() - offsetInMilliseconds))
+                .withNamespace(nameSpace)
+                .withPeriod(60 * 60)
+                .withDimensions(new Dimension().withName("InstanceId").withValue(instanceID))
+                .withMetricName("NetworkIn")
+                .withStatistics(statistic)
+                .withEndTime(new Date());
+
+        getMetricStatisticsResult = cw.getMetricStatistics(request1);
+        dataPoint = getMetricStatisticsResult.getDatapoints();
+        for(Object aDataPoint : dataPoint)
+        {
+            Datapoint dp = (Datapoint) aDataPoint;
+            timeStamp=dp.getTimestamp();
+            networkbytesin=dp.getAverage();
+            unit=dp.getUnit();
+
+            System.out.println("\n" + "Metric Name: " + request1.getMetricName());
+            System.out.println(timeStamp + "\t" + networkbytesin + "\t" + unit);
+        }
+
+
+        request1 = new GetMetricStatisticsRequest()
+                .withStartTime(new Date(new Date().getTime() - offsetInMilliseconds))
+                .withNamespace(nameSpace)
+                .withPeriod(60 * 60)
+                .withDimensions(new Dimension().withName("InstanceId").withValue(instanceID))
+                .withMetricName("NetworkOut")
+                .withStatistics(statistic)
+                .withEndTime(new Date());
+
+        getMetricStatisticsResult = cw.getMetricStatistics(request1);
+        dataPoint = getMetricStatisticsResult.getDatapoints();
+        for(Object aDataPoint : dataPoint)
+        {
+            Datapoint dp = (Datapoint) aDataPoint;
+            timeStamp=dp.getTimestamp();
+            networkbytesin=dp.getAverage();
+            unit=dp.getUnit();
+
+            System.out.println("\n" + "Metric Name: " + request1.getMetricName());
+            System.out.println(timeStamp + "\t" + networkbytesin + "\t" + unit);
+        }
+
+
+        request1 = new GetMetricStatisticsRequest()
+                .withStartTime(new Date(new Date().getTime() - offsetInMilliseconds))
+                .withNamespace(nameSpace)
+                .withPeriod(60 * 60)
+                .withDimensions(new Dimension().withName("InstanceId").withValue(instanceID))
+                .withMetricName("DiskReadBytes")
+                .withStatistics(statistic)
+                .withEndTime(new Date());
+
+        getMetricStatisticsResult = cw.getMetricStatistics(request1);
+        dataPoint = getMetricStatisticsResult.getDatapoints();
+        for(Object aDataPoint : dataPoint)
+        {
+            Datapoint dp = (Datapoint) aDataPoint;
+            timeStamp=dp.getTimestamp();
+            networkbytesin=dp.getAverage();
+            unit=dp.getUnit();
+
+            System.out.println("\n" + "Metric Name: " + request1.getMetricName());
+            System.out.println(timeStamp + "\t" + networkbytesin + "\t" + unit);
+        }
+    }
+    
+
+    public static void cloudwatchMonitoring()
+    {
+        CloudWatchClient cw = CloudWatchClient.builder().build();
+        boolean done = false;
+        String nextToken = null;
+
+        while(!done) {
+
+            ListMetricsResponse response;
+
+            if (nextToken == null)
+            {
+                ListMetricsRequest request
+                        = ListMetricsRequest.builder()
+                        .namespace("AWS/EC2")
+                        .build();
+                response = cw.listMetrics(request);
+            }
+            else
+            {
+                ListMetricsRequest request = ListMetricsRequest.builder()
+                        .namespace("AWS/EC2")
+                        .nextToken(nextToken)
+                        .build();
+                response = cw.listMetrics(request);
+            }
+
+            for(Metric metric : response.metrics())
+            {
+
+                System.out.println("Retrieved metric " + metric.metricName());
+                System.out.println(metric.toString() + "\n");
+            }
+
+            if(response.nextToken() == null)
+            {
+                done = true;
+            }
+            else
+            {
+                nextToken = response.nextToken();
+            }
+        }
+    }
+
+
     public static void main(String[] args)
     {
         String groupName="";
         String groupDesc="";
         String vpc_id="";
-        String region="eu-west-1"; //ireland
+        String region="";
         String keyName="";
         String amiID = "";
         String instanceID="";
@@ -295,8 +513,15 @@ public class awsEC2 {
 
         final AmazonEC2 ec2=AmazonEC2ClientBuilder.standard().withRegion(region).build();
         Ec2Client ec3 = software.amazon.awssdk.services.ec2.Ec2Client.builder().region(software.amazon.awssdk.regions.Region.of(region)).build();
+        final AmazonCloudWatch cw = AmazonCloudWatchClientBuilder.
+                standard().withRegion(region).build();
 
-        describeInstance(ec2);
+
+        //describeInstanceWithID(); call from ---getCloudwatchMetricData---- func
+        getCloudwatchMetricData(instanceID, region);
+        //cloudwatchMonitoring();
+        //cloudwatchDescribeAlarm();
+        //describeInstance(ec2);
         //stopInstance(instanceID);
         //listKeyPair(ec2);
         //createKeyPair(keyName,ec2);
