@@ -1,0 +1,33 @@
+Docker installation on ubuntu: 
+
+sudo apt install apt-transport-https ca-certificates curl software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu bionic stable"
+sudo apt update
+apt-cache policy docker-ce
+sudo apt install docker-ce
+
+-----------------------------------
+
+switch to root: sudo su
+To run ubuntu instance on docker container
+
+docker pull ubuntu
+docker run -it -p PORT_TO_CONNECT_FROM_OUTSIDE_WORLD:PORT_ON_CONTAINER ubuntu
+
+Copy your files to the server using scp
+open another terminal
+
+switch to root
+docker ps (will list containers. Copy the container id)
+docker cp filename CONTAINER_ID:/ (This copies the file to the root folder of container)
+
+Container created
+
+-----------------------------------
+
+To reconnect to container
+docker exec -i -t CONTAINER_ID "/bin/bash"
+
+**Once container is stopped, all the data on it is gone
+
